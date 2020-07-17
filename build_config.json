@@ -1,0 +1,21 @@
+{
+
+  "android": {
+    "google_json_key": "~/.keys/filmest/google/api-key.json",
+    "signing_config": "~/.keys/filmest/google/tvip-key.properties",
+    "google_service" : "~/.keys/filmest/google/google-services.json",
+    "application_id": "io.britov.app.Filmest.filmest",
+    "application_label": "Filmest"
+  },
+
+  "ios": {
+    "team": "117932679",
+    "provisioning_profile": "Filmest Deploy",
+    "application_id": "io.britov.app.filmest",
+    "tester_group_name": "ALL"
+  },
+
+  "flutter": {
+    "target": "lib/main.dart"
+  }
+}

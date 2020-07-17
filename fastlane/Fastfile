@@ -1,0 +1,156 @@
+fastlane_require 'json'
+
+BUILD_CONFIG=JSON.parse(File.read('../build_config.json'))
+PROJECT_ROOT = File.dirname(File.absolute_path(__FILE__)) + "/.."
+BUILD_NUMBER = number_of_commits()
+
+################################################################
+# Common lanes
+################################################################
+before_each do |lane, options|
+  if (!options[:allow_dirty])
+    ensure_git_status_clean()
+  end
+end
+
+################################################################
+# Android
+################################################################
+ANDROID_ROOT = PROJECT_ROOT + "/android"
+
+platform :android do
+
+
+
+    lane ("build").to_sym do
+
+      puts "BUILD number: #{BUILD_NUMBER}"
+      Dir.chdir PROJECT_ROOT do
+
+        sh("flutter", "clean")
+        sh("flutter", "build", "appbundle",
+           "--release",
+           "--build-number=" + BUILD_NUMBER.to_s,
+           "--target=" + BUILD_CONFIG['flutter']['target']
+        )
+      end
+
+    end
+
+    # production, beta, alpha, internal, rollout
+    %w(production beta alpha internal).each do |deploy_channel|
+
+      lane ("deploy" + "_" + deploy_channel).to_sym do
+
+        # build first
+        ("build").to_sym
+
+        json_key_name = BUILD_CONFIG['android']['google_json_key']
+
+        upload_to_play_store(
+            track: deploy_channel,
+            package_name: BUILD_CONFIG['android']['application_id'],
+            aab: ANDROID_ROOT + '/../build/app/outputs/bundle/' + 'app' + 'Release/app.aab',
+
+            json_key: BUILD_CONFIG['android']['google_json_key'],
+
+            skip_upload_apk: true,
+            skip_upload_images: true,
+            skip_upload_screenshots: true,
+        )
+      end
+   end
+
+
+
+end
+
+################################################################
+# iOS
+################################################################
+IOS_ROOT = PROJECT_ROOT + "/ios"
+
+platform :ios do
+
+    provisioning_profile_name = BUILD_CONFIG['ios']['provisioning_profile']
+    output_directory = PROJECT_ROOT + "/build/app/outputs/ipa/app/release/"
+    output_base_name = "app"
+
+    team_id = BUILD_CONFIG['ios']['team']
+
+    lane ("build").to_sym do
+
+      puts "BUILD number: #{BUILD_NUMBER}"
+      Dir.chdir PROJECT_ROOT do
+        sh("flutter", "clean")
+        sh("flutter", "build", "ios",
+           "--release",
+           "--no-codesign",
+           "--build-number=" + BUILD_NUMBER.to_s,
+           "--target=" + BUILD_CONFIG['flutter']['target']
+        )
+      end
+
+
+      Dir.chdir IOS_ROOT do
+
+
+        #  On iOS an extra build is required since flutter build builds an .app rather than archiving .ipa for release.
+        #  https://flutter.io/docs/deployment/fastlane-cd
+        build_ios_app(
+            workspace: IOS_ROOT + '/Runner.xcworkspace', # need to use legacy build system
+            configuration: 'Release-app',
+            silent: true,
+            output_directory: output_directory,
+            output_name: "#{output_base_name}.ipa",
+            skip_profile_detection: true,
+            export_options: {
+                method: "app-store",
+                provisioningProfiles: {
+                    BUILD_CONFIG['ios']['application_id'] => BUILD_CONFIG['ios']['provisioning_profile']
+                }
+            }
+        )
+
+        binary_path = IOS_ROOT + "/Pods/Fabric/upload-symbols"
+
+        # TODO: upload symbols. export GOOGLE_SERVICES_INFO_PLIST_PATH and CRASHLYTICS_API_TOKEN
+        #upload_symbols_to_crashlytics(
+        #    dsym_path: "#{output_directory}/#{output_base_name}.app.dSYM.zip",
+        #    binary_path: binary_path
+        #)
+      end
+    end
+
+    lane ("deploy" + "_to_testflight").to_sym do
+
+      # build first
+      ("build").to_sym
+
+
+
+      # upload
+      upload_to_testflight(
+          app_identifier: BUILD_CONFIG['ios']['application_id'],
+          ipa: "#{output_directory}/#{output_base_name}.ipa",
+          team_id: team_id
+      )
+
+    end
+
+    lane ("deploy" + "_to_app_store").to_sym do
+
+      # build first
+      ("build").to_sym
+
+      # upload
+      upload_to_app_store(
+          app_identifier: BUILD_CONFIG['ios']['application_id'],
+          ipa: "#{output_directory}/#{output_base_name}.ipa",
+          team_id: team_id
+      )
+
+    end
+
+
+end
